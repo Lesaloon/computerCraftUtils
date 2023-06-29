@@ -16,6 +16,14 @@ local wait = read()
 
 local loopcost = 4*3 + branchlength*4 *2
 
+local notif = {
+  "electrodynamics:deepslateoretin",
+  "minecraft:deepslate_copper_ore",
+}
+
+local cellId = 11
+
+
 local useless= {
   "minecraft:dirt",
   "minecraft:stone",
@@ -38,43 +46,160 @@ local useless= {
   "minecraft:budding_amethyst",
   "minecraft:moss_block",
   "minecraft:moss_carpet",
+  "minecraft:water",
+  "minecraft:lava",
+  "minecraft:grass",
+  "minecraft:grass_block",
+  "minecraft:grass_path",
+  "minecraft:mycelium",
+  "minecraft:podzol",
+  "minecraft:coarse_dirt",
+  "minecraft:farmland",
+  "computercraft:turtle_normal",
+  "computercraft:turtle_advanced",
+  "computercraft:computer_normal",
+  "computercraft:computer_advanced",
+  "computercraft:disk_drive",
+  "computercraft:printer",
+  "computercraft:monitor",
+  "computercraft:advanced_monitor",
 }
 
+-- checks if an element is in a table
+local function tablehas(t, v)
+  for i=1, #t do
+    if t[i] == v then
+      return true
+    end
+  end
+  return false
+end
 
-function tl (c)
-  for i=1, c do
-    turtle.turnLeft()
+-- checks if the turtle has found a block and notifies the player
+local function Notif(has_block, block)
+  -- check if the turtle has a rednet modem
+  local has_modem = peripheral.find("modem")
+  if not has_modem then
+    return
+  end
+  if has_block and tablehas(notif, block.name) then
+    rednet.open("left")
+    local name = os.getComputerLabel()
+    local time = textutils.formatTime(os.time())
+    local message = time .. " : " .. name .. " has found a " .. block.name .. "!\nHe will be waiting for you now. At distance " .. distance
+    rednet.send(cellId, message, "NotifMine")
+    rednet.close("left")
+
+    -- Wait for turtle input
+    print("Waiting for user input")
+    os.pullEvent("key")
   end
 end
 
-function tr (c)
-  for i=1, c do
-    turtle.turnRight()
-  end
-end
-
-function tun (len)
-  for i=1,len do
+local function mine()
+  local function digAndMove()
+    -- This function moves forward, digs, and moves back
+    -- to its starting position.
     turtle.dig()
-    while turtle.forward() == false do turtle.dig() end
+    turtle.forward()
+    mine()
+    turtle.back()
+  end
+
+  local function digAndMoveDown()
+    -- This function moves down, digs, and moves up
+    -- to its starting position.
+    turtle.digDown()
+    turtle.down()
+    mine()
+    turtle.up()
+  end
+
+  local function digAndMoveUp()
+    -- This function moves up, digs, and moves down
+    -- to its starting position.
+    turtle.digUp()
+    turtle.up()
+    mine()
+    turtle.down()
+  end
+
+  local function turnLeftAndInspect()
+    -- This function turns left, inspects the block in front of it,
+    -- and returns true if the block is not in the useless table.
+    turtle.turnLeft()
+    local has_block, data = turtle.inspect()
+    Notif(has_block, data)
+    return has_block and not tablehas(useless, data.name)
+  end
+
+  local function turnRightAndInspect()
+    -- This function turns right, inspects the block in front of it,
+    -- and returns true if the block is not in the useless table.
+    turtle.turnRight()
+    local has_block, data = turtle.inspect()
+    Notif(has_block, data)
+    return has_block and not tablehas(useless, data.name)
+  end
+
+  local function inspectAndMine()
+    -- This function inspects the block in front of it,
+    -- and mines it if it is not in the useless table.
+    local has_block, data = turtle.inspect()
+    Notif(has_block, data)
+    if has_block and not tablehas(useless, data.name) then
+      digAndMove()
+    else
+      turtle.dig()
+    end
+  end
+
+  local top_has_block, top_data = turtle.inspectUp()
+  Notif(top_has_block, top_data)
+  if top_has_block and not tablehas(useless, top_data.name) then
+    turtle.digUp()
+    turtle.up()
+    mine()
+    turtle.down()
+  else
     turtle.digUp()
   end
-end
 
-function gof (len)
-  for i=1, len do
-    while turtle.forward() == false do turtle.dig() end
+  if turnLeftAndInspect() then
+    inspectAndMine()
+  end
+
+  if turnRightAndInspect() then
+    inspectAndMine()
+  end
+
+  if turnRightAndInspect() then
+    inspectAndMine()
+  end
+
+  if turnLeftAndInspect() then
+    inspectAndMine()
+  end
+
+  local down_has_block, down_data = turtle.inspectDown()
+  Notif(down_has_block, down_data)
+  if down_has_block and not tablehas(useless, down_data.name) then
+    turtle.digDown()
+    turtle.down()
+    mine()
+    turtle.up()
   end
 end
 
-function fuel()
+
+local function fuel()
     for i=1, 16 do
       turtle.select(i)
       if (turtle.getItemCount(i) ~= 0 and turtle.getItemDetail(i).name ~= "minecraft:chest" and turtle.refuel(turtle.getItemCount(i))) then return end
     end
 end
 
-function dropUseless()
+local function dropUseless()
   for i=1, 16 do
     turtle.select(i)
     if (turtle.getItemCount(i) ~= 0) then
@@ -90,7 +215,7 @@ function dropUseless()
   end
 end
 
-function inv()
+local function inv()
   total = 0
   for i=1, 16 do
     if turtle.getItemCount(i) ~= 0 then
@@ -100,7 +225,7 @@ function inv()
   return total
 end
 
-function chest()
+local function chest()
   chestPlaced = false
   for i=1, 16 do
     if (turtle.getItemCount(i) ~= 0 and turtle.getItemDetail(i).name == "minecraft:chest") then
@@ -124,11 +249,20 @@ function chest()
   return chestPlaced
 end
 
+local function tun (len)
+  for i=1,len do
+    mine()
+    while turtle.forward() == false do turtle.dig() end
+    turtle.digUp()
+  end
+end
+
 while true do
-  -- Refuel, clear inventory
+  -- Refuel
   if usefuel == "y" then
     fuel()
   end
+  -- Clear inventory of useless items
   dropUseless()
 
   -- Strip mining algorithm
